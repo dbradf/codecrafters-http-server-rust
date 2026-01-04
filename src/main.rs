@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -8,6 +7,14 @@ use std::{
 };
 
 use clap::Parser;
+
+use crate::{
+    http_request::{HttpMethod, HttpRequest},
+    http_response::HttpResponse,
+};
+
+mod http_request;
+mod http_response;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -24,12 +31,11 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut stream) => {
+            Ok(stream) => {
                 println!("accepted new connection");
                 let directory = cli.directory.clone();
                 thread::spawn(move || {
-                    let response = process_request(&mut stream, directory);
-                    stream.write_all(&response).unwrap();
+                    process_request(stream, directory);
                 });
             }
             Err(e) => {
@@ -39,53 +45,48 @@ fn main() {
     }
 }
 
-fn process_request(stream: &mut TcpStream, directory: Option<String>) -> Vec<u8> {
-    let read_str = read_request(stream);
-    let request = parse_request(&read_str);
+fn process_request(mut stream: TcpStream, directory: Option<String>) {
+    let read_str = read_request(&mut stream);
+    let request = HttpRequest::from_str(&read_str);
 
     dbg!(&request);
 
-    match &request.method {
+    let response = match &request.method {
         HttpMethod::Get => handle_get(request, directory),
         HttpMethod::Post => handle_post(request, directory),
-    }
+    };
+
+    stream.write_all(&response).unwrap();
 }
 
 fn handle_get(request: HttpRequest, directory: Option<String>) -> Vec<u8> {
     match request.path.as_str() {
-        "/" => "HTTP/1.1 200 OK\r\n\r\n".as_bytes().to_vec(),
+        "/" => HttpResponse::new(200, "OK").to_bytes(),
         "/user-agent" => {
             let user_agent = request.headers.get("User-Agent").unwrap();
-            format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-                user_agent.len(),
-                *user_agent
-            )
-            .into_bytes()
+            let mut response = HttpResponse::new(200, "OK");
+            response.set_content(user_agent.to_string(), "text/plain");
+
+            response.to_bytes()
         }
         s if s.starts_with("/files/") => {
             let filename = s.trim_start_matches("/files/");
             let content = find_file(directory, filename);
             if let Some(content) = content {
-                format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n{}",
-                    content.len(), content
-                ).into_bytes()
+                let mut response = HttpResponse::new(200, "OK");
+                response.set_content(content, "application/octet-stream");
+                response.to_bytes()
             } else {
-                "HTTP/1.1 404 Not Found\r\n\r\n".as_bytes().to_vec()
+                HttpResponse::new(404, "Not Found").to_bytes()
             }
         }
         s if s.starts_with("/echo/") => {
             let echo_value = s.trim_start_matches("/echo/");
-            format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-                echo_value.len(),
-                echo_value
-            )
-            .as_bytes()
-            .to_vec()
+            let mut response = HttpResponse::new(200, "OK");
+            response.set_content(echo_value.to_string(), "text/plain");
+            response.to_bytes()
         }
-        _ => "HTTP/1.1 404 Not Found\r\n\r\n".as_bytes().to_vec(),
+        _ => HttpResponse::new(404, "Not Found").to_bytes(),
     }
 }
 
@@ -94,9 +95,9 @@ fn handle_post(request: HttpRequest, directory: Option<String>) -> Vec<u8> {
         s if s.starts_with("/files/") => {
             let filename = s.trim_start_matches("/files/");
             write_file(directory, filename, &request.body);
-            "HTTP/1.1 201 Created\r\n\r\n".as_bytes().to_vec()
+            HttpResponse::new(201, "Created").to_bytes()
         }
-        _ => "HTTP/1.1 404 Not Found\r\n\r\n".as_bytes().to_vec(),
+        _ => HttpResponse::new(404, "Not Found").to_bytes(),
     }
 }
 
@@ -130,67 +131,5 @@ fn read_request(stream: &mut TcpStream) -> String {
         if n_bytes < 1024 {
             return request;
         }
-    }
-}
-
-#[derive(Debug)]
-enum HttpMethod {
-    Get,
-    Post,
-}
-
-#[derive(Debug)]
-struct HttpRequest {
-    method: HttpMethod,
-    path: String,
-    headers: HashMap<String, String>,
-    body: String,
-}
-
-enum ParseState {
-    RequestLine,
-    Headers,
-    Body,
-}
-
-fn parse_request(request: &str) -> HttpRequest {
-    let mut method = HttpMethod::Get;
-    let mut state = ParseState::RequestLine;
-    let mut headers = HashMap::new();
-    let mut path = None;
-    let mut body = String::new();
-
-    for line in request.split("\r\n") {
-        match state {
-            ParseState::RequestLine => {
-                let request_line: Vec<&str> = line.split(" ").collect();
-                if request_line[0] == "POST" {
-                    method = HttpMethod::Post;
-                }
-
-                path = Some(request_line[1].to_string());
-
-                state = ParseState::Headers;
-            }
-            ParseState::Headers => {
-                if line.is_empty() {
-                    state = ParseState::Body;
-                    continue;
-                }
-
-                let parts: Vec<&str> = line.split(": ").collect();
-                headers.insert(parts[0].to_string(), parts[1].to_string());
-            }
-            ParseState::Body => {
-                body.push_str(line);
-            }
-        }
-    }
-
-    HttpRequest {
-        method,
-        path: path.unwrap(),
-        headers,
-        body,
     }
 }
