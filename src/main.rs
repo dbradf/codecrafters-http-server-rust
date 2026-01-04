@@ -40,32 +40,15 @@ fn main() {
 }
 
 fn process_request(stream: &mut TcpStream, directory: Option<String>) -> Vec<u8> {
-    let mut buffer = [0u8; 1024];
-    let n_bytes = stream.read(&mut buffer).unwrap();
+    let read_str = read_request(stream);
+    let request = parse_request(&read_str);
 
-    let read_str = String::from_utf8(buffer[..n_bytes].to_vec()).unwrap();
+    dbg!(&request);
 
-    let parts: Vec<&str> = read_str.split("\r\n").collect();
-
-    let mut headers = vec![];
-    for line in &parts[1..] {
-        if line.is_empty() {
-            break;
-        }
-        headers.push(*line);
-    }
-    let mut header_map = HashMap::new();
-    for header in headers {
-        let parts: Vec<&str> = header.split(": ").collect();
-        header_map.insert(parts[0], parts[1]);
-    }
-
-    let request_line: Vec<&str> = parts[0].split(" ").collect();
-    dbg!(&parts, &header_map);
-    match request_line[1] {
+    match request.path.as_str() {
         "/" => "HTTP/1.1 200 OK\r\n\r\n".as_bytes().to_vec(),
         "/user-agent" => {
-            let user_agent = header_map.get("User-Agent").unwrap();
+            let user_agent = request.headers.get("User-Agent").unwrap();
             format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
                 user_agent.len(),
@@ -109,4 +92,77 @@ fn find_file(directory: Option<String>, filename: &str) -> Option<String> {
     }
 
     None
+}
+
+fn read_request(stream: &mut TcpStream) -> String {
+    let mut request = String::new();
+    loop {
+        let mut buffer = [0u8; 1024];
+        let n_bytes = stream.read(&mut buffer).unwrap();
+
+        request.push_str(str::from_utf8(&buffer[..n_bytes]).unwrap());
+        if n_bytes < 1024 {
+            return request;
+        }
+    }
+}
+
+#[derive(Debug)]
+enum HttpMethod {
+    Get,
+    Post,
+}
+
+#[derive(Debug)]
+struct HttpRequest {
+    method: HttpMethod,
+    path: String,
+    headers: HashMap<String, String>,
+}
+
+enum ParseState {
+    RequestLine,
+    Headers,
+    Body,
+}
+
+fn parse_request(request: &str) -> HttpRequest {
+    let mut method = HttpMethod::Get;
+    let mut state = ParseState::RequestLine;
+    let mut headers = HashMap::new();
+    let mut path = None;
+    let parts: Vec<&str> = request.split("\r\n").collect();
+
+    for line in parts {
+        match state {
+            ParseState::RequestLine => {
+                let request_line: Vec<&str> = line.split(" ").collect();
+                if request_line[0] == "POST" {
+                    method = HttpMethod::Post;
+                }
+
+                path = Some(request_line[1].to_string());
+
+                state = ParseState::Headers;
+            }
+            ParseState::Headers => {
+                if line.is_empty() {
+                    state = ParseState::Body;
+                    continue;
+                }
+
+                let parts: Vec<&str> = line.split(": ").collect();
+                headers.insert(parts[0].to_string(), parts[1].to_string());
+            }
+            ParseState::Body => {
+                continue;
+            }
+        }
+    }
+
+    HttpRequest {
+        method,
+        path: path.unwrap(),
+        headers,
+    }
 }
