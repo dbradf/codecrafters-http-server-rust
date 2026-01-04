@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
+    thread,
 };
 
 fn main() {
@@ -14,8 +15,10 @@ fn main() {
         match stream {
             Ok(mut stream) => {
                 println!("accepted new connection");
-                let response = process_request(&mut stream);
-                stream.write_all(&response).unwrap();
+                thread::spawn(move || {
+                    let response = process_request(&mut stream);
+                    stream.write_all(&response).unwrap();
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
