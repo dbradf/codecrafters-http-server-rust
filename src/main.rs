@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
 };
@@ -30,10 +31,33 @@ fn process_request(stream: &mut TcpStream) -> Vec<u8> {
     let read_str = String::from_utf8(buffer[..n_bytes].to_vec()).unwrap();
 
     let parts: Vec<&str> = read_str.split("\r\n").collect();
+
+    let mut headers = vec![];
+    for line in &parts[1..] {
+        if line.is_empty() {
+            break;
+        }
+        headers.push(*line);
+    }
+    let mut header_map = HashMap::new();
+    for header in headers {
+        let parts: Vec<&str> = header.split(": ").collect();
+        header_map.insert(parts[0], parts[1]);
+    }
+
     let request_line: Vec<&str> = parts[0].split(" ").collect();
-    println!("{:?}", &request_line);
+    dbg!(&parts, &header_map);
     match request_line[1] {
         "/" => "HTTP/1.1 200 OK\r\n\r\n".as_bytes().to_vec(),
+        "/user-agent" => {
+            let user_agent = header_map.get("User-Agent").unwrap();
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                user_agent.len(),
+                *user_agent
+            )
+            .into_bytes()
+        }
         s if s.starts_with("/echo/") => {
             let echo_value = s.trim_start_matches("/echo/");
             format!(
