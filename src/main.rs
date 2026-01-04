@@ -34,6 +34,16 @@ fn process_request(stream: &mut TcpStream) -> Vec<u8> {
     println!("{:?}", &request_line);
     match request_line[1] {
         "/" => "HTTP/1.1 200 OK\r\n\r\n".as_bytes().to_vec(),
+        s if s.starts_with("/echo/") => {
+            let echo_value = s.trim_start_matches("/echo/");
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                echo_value.len(),
+                echo_value
+            )
+            .as_bytes()
+            .to_vec()
+        }
         _ => "HTTP/1.1 404 Not Found\r\n\r\n".as_bytes().to_vec(),
     }
 }
