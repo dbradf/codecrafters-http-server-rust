@@ -1,11 +1,22 @@
 use std::{
     collections::HashMap,
+    fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
+    path::PathBuf,
     thread,
 };
 
+use clap::Parser;
+
+#[derive(Debug, Parser)]
+struct Cli {
+    #[arg(long)]
+    directory: Option<String>,
+}
+
 fn main() {
+    let cli = Cli::parse();
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
 
@@ -15,8 +26,9 @@ fn main() {
         match stream {
             Ok(mut stream) => {
                 println!("accepted new connection");
+                let directory = cli.directory.clone();
                 thread::spawn(move || {
-                    let response = process_request(&mut stream);
+                    let response = process_request(&mut stream, directory);
                     stream.write_all(&response).unwrap();
                 });
             }
@@ -27,7 +39,7 @@ fn main() {
     }
 }
 
-fn process_request(stream: &mut TcpStream) -> Vec<u8> {
+fn process_request(stream: &mut TcpStream, directory: Option<String>) -> Vec<u8> {
     let mut buffer = [0u8; 1024];
     let n_bytes = stream.read(&mut buffer).unwrap();
 
@@ -61,6 +73,18 @@ fn process_request(stream: &mut TcpStream) -> Vec<u8> {
             )
             .into_bytes()
         }
+        s if s.starts_with("/files/") => {
+            let filename = s.trim_start_matches("/files/");
+            let content = find_file(directory, filename);
+            if let Some(content) = content {
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n{}",
+                    content.len(), content
+                ).into_bytes()
+            } else {
+                "HTTP/1.1 404 Not Found\r\n\r\n".as_bytes().to_vec()
+            }
+        }
         s if s.starts_with("/echo/") => {
             let echo_value = s.trim_start_matches("/echo/");
             format!(
@@ -73,4 +97,16 @@ fn process_request(stream: &mut TcpStream) -> Vec<u8> {
         }
         _ => "HTTP/1.1 404 Not Found\r\n\r\n".as_bytes().to_vec(),
     }
+}
+
+fn find_file(directory: Option<String>, filename: &str) -> Option<String> {
+    if let Some(directory) = directory {
+        let mut path = PathBuf::from(directory);
+        path.push(filename);
+        if path.exists() {
+            return Some(fs::read_to_string(path).unwrap());
+        }
+    }
+
+    None
 }
