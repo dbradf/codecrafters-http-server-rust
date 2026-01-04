@@ -45,6 +45,13 @@ fn process_request(stream: &mut TcpStream, directory: Option<String>) -> Vec<u8>
 
     dbg!(&request);
 
+    match &request.method {
+        HttpMethod::Get => handle_get(request, directory),
+        HttpMethod::Post => handle_post(request, directory),
+    }
+}
+
+fn handle_get(request: HttpRequest, directory: Option<String>) -> Vec<u8> {
     match request.path.as_str() {
         "/" => "HTTP/1.1 200 OK\r\n\r\n".as_bytes().to_vec(),
         "/user-agent" => {
@@ -82,6 +89,17 @@ fn process_request(stream: &mut TcpStream, directory: Option<String>) -> Vec<u8>
     }
 }
 
+fn handle_post(request: HttpRequest, directory: Option<String>) -> Vec<u8> {
+    match request.path.as_str() {
+        s if s.starts_with("/files/") => {
+            let filename = s.trim_start_matches("/files/");
+            write_file(directory, filename, &request.body);
+            "HTTP/1.1 201 Created\r\n\r\n".as_bytes().to_vec()
+        }
+        _ => "HTTP/1.1 404 Not Found\r\n\r\n".as_bytes().to_vec(),
+    }
+}
+
 fn find_file(directory: Option<String>, filename: &str) -> Option<String> {
     if let Some(directory) = directory {
         let mut path = PathBuf::from(directory);
@@ -92,6 +110,14 @@ fn find_file(directory: Option<String>, filename: &str) -> Option<String> {
     }
 
     None
+}
+
+fn write_file(directory: Option<String>, filename: &str, content: &str) {
+    if let Some(directory) = directory {
+        let mut path = PathBuf::from(directory);
+        path.push(filename);
+        fs::write(path, content).unwrap();
+    }
 }
 
 fn read_request(stream: &mut TcpStream) -> String {
@@ -118,6 +144,7 @@ struct HttpRequest {
     method: HttpMethod,
     path: String,
     headers: HashMap<String, String>,
+    body: String,
 }
 
 enum ParseState {
@@ -131,9 +158,9 @@ fn parse_request(request: &str) -> HttpRequest {
     let mut state = ParseState::RequestLine;
     let mut headers = HashMap::new();
     let mut path = None;
-    let parts: Vec<&str> = request.split("\r\n").collect();
+    let mut body = String::new();
 
-    for line in parts {
+    for line in request.split("\r\n") {
         match state {
             ParseState::RequestLine => {
                 let request_line: Vec<&str> = line.split(" ").collect();
@@ -155,7 +182,7 @@ fn parse_request(request: &str) -> HttpRequest {
                 headers.insert(parts[0].to_string(), parts[1].to_string());
             }
             ParseState::Body => {
-                continue;
+                body.push_str(line);
             }
         }
     }
@@ -164,5 +191,6 @@ fn parse_request(request: &str) -> HttpRequest {
         method,
         path: path.unwrap(),
         headers,
+        body,
     }
 }
