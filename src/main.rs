@@ -57,18 +57,21 @@ fn process_request(mut stream: TcpStream, directory: Option<String>) {
         HttpMethod::Post => handle_post(request, directory),
     };
 
-    stream.write_all(&response).unwrap();
+    dbg!(&response);
+    dbg!(str::from_utf8(&response.to_bytes()).unwrap());
+
+    stream.write_all(&response.to_bytes()).unwrap();
 }
 
-fn handle_get(request: HttpRequest, directory: Option<String>) -> Vec<u8> {
+fn handle_get(request: HttpRequest, directory: Option<String>) -> HttpResponse {
     match request.path.as_str() {
-        "/" => HttpResponse::new(200, "OK").to_bytes(),
+        "/" => HttpResponse::new(200, "OK"),
         "/user-agent" => {
             let user_agent = request.headers.get("User-Agent").unwrap();
             let mut response = HttpResponse::new(200, "OK");
             response.set_content(user_agent.to_string(), "text/plain");
 
-            response.to_bytes()
+            response
         }
         s if s.starts_with("/files/") => {
             let filename = s.trim_start_matches("/files/");
@@ -76,9 +79,9 @@ fn handle_get(request: HttpRequest, directory: Option<String>) -> Vec<u8> {
             if let Some(content) = content {
                 let mut response = HttpResponse::new(200, "OK");
                 response.set_content(content, "application/octet-stream");
-                response.to_bytes()
+                response
             } else {
-                HttpResponse::new(404, "Not Found").to_bytes()
+                HttpResponse::new(404, "Not Found")
             }
         }
         s if s.starts_with("/echo/") => {
@@ -91,20 +94,20 @@ fn handle_get(request: HttpRequest, directory: Option<String>) -> Vec<u8> {
                     response.set_encoding(Encoding::Gzip);
                 }
             }
-            response.to_bytes()
+            response
         }
-        _ => HttpResponse::new(404, "Not Found").to_bytes(),
+        _ => HttpResponse::new(404, "Not Found"),
     }
 }
 
-fn handle_post(request: HttpRequest, directory: Option<String>) -> Vec<u8> {
+fn handle_post(request: HttpRequest, directory: Option<String>) -> HttpResponse {
     match request.path.as_str() {
         s if s.starts_with("/files/") => {
             let filename = s.trim_start_matches("/files/");
             write_file(directory, filename, &request.body);
-            HttpResponse::new(201, "Created").to_bytes()
+            HttpResponse::new(201, "Created")
         }
-        _ => HttpResponse::new(404, "Not Found").to_bytes(),
+        _ => HttpResponse::new(404, "Not Found"),
     }
 }
 

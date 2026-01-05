@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub enum Encoding {
     Gzip,
 }
@@ -12,6 +13,7 @@ impl ToString for Encoding {
     }
 }
 
+#[derive(Debug)]
 pub struct HttpResponse {
     status_code: u64,
     status: String,
@@ -63,9 +65,9 @@ impl HttpResponse {
         let headers: Vec<String> = self
             .headers
             .iter()
-            .map(|(k, v)| format!("{}: {}", k, v))
+            .map(|(k, v)| format!("{}: {}\r\n", k, v))
             .collect();
 
-        headers.join("\r\n")
+        headers.join("")
     }
 }
