@@ -52,13 +52,12 @@ fn process_request(mut stream: TcpStream, directory: Option<String>) {
 
     dbg!(&request);
 
-    let response = match &request.method {
+    let mut response = match &request.method {
         HttpMethod::Get => handle_get(request, directory),
         HttpMethod::Post => handle_post(request, directory),
     };
 
     dbg!(&response);
-    dbg!(str::from_utf8(&response.to_bytes()).unwrap());
 
     stream.write_all(&response.to_bytes()).unwrap();
 }

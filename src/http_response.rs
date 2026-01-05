@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::io::prelude::*;
+
+use flate2::{Compression, write::GzEncoder};
 
 #[derive(Debug)]
 pub enum Encoding {
@@ -50,15 +53,32 @@ impl HttpResponse {
         self.encoding = Some(encoding);
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
-        format!(
-            "HTTP/1.1 {} {}\r\n{}\r\n{}",
+    pub fn format_content(&self) -> Vec<u8> {
+        if let Some(encoding) = &self.encoding {
+            match encoding {
+                Encoding::Gzip => {
+                    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+                    encoder.write_all(self.content.as_bytes()).unwrap();
+                    encoder.finish().unwrap()
+                }
+            }
+        } else {
+            self.content.clone().into_bytes()
+        }
+    }
+
+    pub fn to_bytes(&mut self) -> Vec<u8> {
+        let content = self.format_content();
+        self.add_header("Content-Length", &content.len().to_string());
+        let mut bytes = format!(
+            "HTTP/1.1 {} {}\r\n{}\r\n",
             self.status_code,
             self.status,
             self.format_headers(),
-            self.content
         )
-        .into_bytes()
+        .into_bytes();
+        bytes.extend(self.format_content());
+        bytes
     }
 
     fn format_headers(&self) -> String {
