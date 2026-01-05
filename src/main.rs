@@ -47,19 +47,25 @@ fn main() {
 }
 
 fn process_request(mut stream: TcpStream, directory: Option<String>) {
-    let read_str = read_request(&mut stream);
-    let request = HttpRequest::from_str(&read_str);
+    loop {
+        let read_str = read_request(&mut stream);
+        if let Some(read_str) = read_str {
+            let request = HttpRequest::from_str(&read_str);
 
-    dbg!(&request);
+            dbg!(&request);
 
-    let mut response = match &request.method {
-        HttpMethod::Get => handle_get(request, directory),
-        HttpMethod::Post => handle_post(request, directory),
-    };
+            let mut response = match &request.method {
+                HttpMethod::Get => handle_get(request, directory.clone()),
+                HttpMethod::Post => handle_post(request, directory.clone()),
+            };
 
-    dbg!(&response);
+            dbg!(&response);
 
-    stream.write_all(&response.to_bytes()).unwrap();
+            stream.write_all(&response.to_bytes()).unwrap();
+        } else {
+            break;
+        }
+    }
 }
 
 fn handle_get(request: HttpRequest, directory: Option<String>) -> HttpResponse {
@@ -130,7 +136,7 @@ fn write_file(directory: Option<String>, filename: &str, content: &str) {
     }
 }
 
-fn read_request(stream: &mut TcpStream) -> String {
+fn read_request(stream: &mut TcpStream) -> Option<String> {
     let mut request = String::new();
     loop {
         let mut buffer = [0u8; 1024];
@@ -138,7 +144,10 @@ fn read_request(stream: &mut TcpStream) -> String {
 
         request.push_str(str::from_utf8(&buffer[..n_bytes]).unwrap());
         if n_bytes < 1024 {
-            return request;
+            if !request.is_empty() {
+                return Some(request);
+            }
+            return None;
         }
     }
 }
