@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -10,7 +11,7 @@ use clap::Parser;
 
 use crate::{
     http_request::{HttpMethod, HttpRequest},
-    http_response::HttpResponse,
+    http_response::{Encoding, HttpResponse},
 };
 
 mod http_request;
@@ -84,6 +85,12 @@ fn handle_get(request: HttpRequest, directory: Option<String>) -> Vec<u8> {
             let echo_value = s.trim_start_matches("/echo/");
             let mut response = HttpResponse::new(200, "OK");
             response.set_content(echo_value.to_string(), "text/plain");
+            if let Some(supported_encodings) = request.headers.get("Accept-Encoding") {
+                let encoding: HashSet<&str> = supported_encodings.split(", ").collect();
+                if encoding.contains("gzip") {
+                    response.set_encoding(Encoding::Gzip);
+                }
+            }
             response.to_bytes()
         }
         _ => HttpResponse::new(404, "Not Found").to_bytes(),

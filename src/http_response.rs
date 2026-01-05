@@ -1,10 +1,23 @@
 use std::collections::HashMap;
 
+pub enum Encoding {
+    Gzip,
+}
+
+impl ToString for Encoding {
+    fn to_string(&self) -> String {
+        match self {
+            Encoding::Gzip => "gzip".to_string(),
+        }
+    }
+}
+
 pub struct HttpResponse {
     status_code: u64,
     status: String,
     headers: HashMap<String, String>,
     content: String,
+    encoding: Option<Encoding>,
 }
 
 impl HttpResponse {
@@ -14,6 +27,7 @@ impl HttpResponse {
             status: status.to_string(),
             headers: HashMap::new(),
             content: String::from(""),
+            encoding: None,
         }
     }
 
@@ -27,6 +41,11 @@ impl HttpResponse {
         self.headers
             .insert(String::from("Content-Length"), content.len().to_string());
         self.content = content;
+    }
+
+    pub fn set_encoding(&mut self, encoding: Encoding) {
+        self.add_header("Content-Encoding", &encoding.to_string());
+        self.encoding = Some(encoding);
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
