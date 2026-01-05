@@ -55,20 +55,29 @@ fn process_request(mut stream: TcpStream, directory: Option<String>) {
             dbg!(&request);
 
             let mut response = match &request.method {
-                HttpMethod::Get => handle_get(request, directory.clone()),
-                HttpMethod::Post => handle_post(request, directory.clone()),
+                HttpMethod::Get => handle_get(&request, directory.clone()),
+                HttpMethod::Post => handle_post(&request, directory.clone()),
             };
+
+            let should_close = request.headers.get("Connection");
+            if should_close == Some(&"close".to_string()) {
+                response.add_header("Connection", "close");
+            }
 
             dbg!(&response);
 
             stream.write_all(&response.to_bytes()).unwrap();
+
+            if should_close == Some(&"close".to_string()) {
+                break;
+            }
         } else {
             break;
         }
     }
 }
 
-fn handle_get(request: HttpRequest, directory: Option<String>) -> HttpResponse {
+fn handle_get(request: &HttpRequest, directory: Option<String>) -> HttpResponse {
     match request.path.as_str() {
         "/" => HttpResponse::new(200, "OK"),
         "/user-agent" => {
@@ -105,7 +114,7 @@ fn handle_get(request: HttpRequest, directory: Option<String>) -> HttpResponse {
     }
 }
 
-fn handle_post(request: HttpRequest, directory: Option<String>) -> HttpResponse {
+fn handle_post(request: &HttpRequest, directory: Option<String>) -> HttpResponse {
     match request.path.as_str() {
         s if s.starts_with("/files/") => {
             let filename = s.trim_start_matches("/files/");
